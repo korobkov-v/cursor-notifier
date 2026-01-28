@@ -1,0 +1,22 @@
+**/.DS_Store
+**/*.ts
+**/*.map
+src/**
+tsconfig.json
+*.vsix
+*.vsix.zip
+
+# Never ship dependencies / lockfiles (this extension runs from dist/)
+node_modules/**
+package-lock.json
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# Repo / tooling noise
+.gitignore
+.github/**
+.vscode/**
+.cursor/**
+!.cursor/hooks/after-agent-response.js
+!.cursor/hooks.json

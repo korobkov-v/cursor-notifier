@@ -1,0 +1,61 @@
+{
+  "name": "cursor-notifier",
+  "displayName": "Cursor Notifier",
+  "description": "Local macOS notifications when Cursor AI Agent/Composer generation finishes (heuristics + state machine).",
+  "icon": "logo.png",
+  "version": "0.1.4",
+  "publisher": "cursor-notifier",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vladkorobkov/cursor-notifier.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vladkorobkov/cursor-notifier/issues"
+  },
+  "homepage": "https://github.com/vladkorobkov/cursor-notifier#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursor-notifier.toggle",
+        "title": "Cursor Notifier: Toggle"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor Notifier",
+      "properties": {
+        "cursor-notifier.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Cursor Agent notifications for this extension."
+        },
+        "cursor-notifier.autoIgnoreGitFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically add hook files to .gitignore when enabling notifications."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . -w",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.4.5"
+  }
+}

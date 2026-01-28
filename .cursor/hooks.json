@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterAgentResponse": [
+      {
+        "command": "node .cursor/hooks/after-agent-response.js"
+      },
+      {
+        "command": "\"/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)\" .cursor/hooks/after-agent-response.js"
+      }
+    ]
+  }
+}
