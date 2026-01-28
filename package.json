@@ -1,7 +1,7 @@
 {
   "name": "cursor-notifier",
   "displayName": "Cursor Notifier",
-  "description": "Local macOS notifications when Cursor AI Agent/Composer generation finishes (heuristics + state machine).",
+  "description": "Local macOS/Windows notifications when Cursor AI Agent/Composer generation finishes (state machine).",
   "icon": "logo.png",
   "version": "0.1.5",
   "publisher": "korobkov-v",
