@@ -9,6 +9,8 @@ macOS notifications when a Cursor Agent/Composer response finishes, using the of
 3. Enable hooks in Cursor (Settings → Hooks).
 
 The extension does not overwrite an existing hook script if you already modified it.
+When you disable the extension, it removes only the hook command; the script is
+kept in place. The next activation can add the command back (with a prompt).
 
 ### Requirements
 
@@ -18,7 +20,7 @@ The extension does not overwrite an existing hook script if you already modified
 
 ### Extension settings
 
-- `cursor-notifier.enabled` (default: true) — master switch for the extension.
+- `cursor-notifier.enabled` (default: true) — master switch for the extension; when disabled, the hook command is removed.
 - `cursor-notifier.autoIgnoreGitFiles` (default: true) — add hook files to `.gitignore` when enabling.
 
 ### Quick start (manual)
@@ -59,6 +61,11 @@ To remove notifications for a workspace:
 1. Open `.cursor/hooks.json` and remove the `afterAgentResponse` entry with the command.
 2. Optionally delete `.cursor/hooks/after-agent-response.js`.
 3. Disable hooks in Cursor settings if you no longer use them.
+
+When the extension deactivates (for example, when you close the window or uninstall),
+it removes its hook command from `.cursor/hooks.json` and deletes the bundled hook
+script if it has not been modified. On the next activation, the extension can add
+the hook back (it may prompt first).
 
 ### Troubleshooting
 

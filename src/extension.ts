@@ -13,6 +13,7 @@ const GITIGNORE_ENTRIES = [
   ".cursor/hooks/after-agent-response.js",
 ] as const;
 let outputChannel: vscode.OutputChannel | undefined;
+let extensionContext: vscode.ExtensionContext | undefined;
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -22,6 +23,7 @@ export async function activate(
     return;
   }
 
+  extensionContext = context;
   outputChannel = vscode.window.createOutputChannel("Cursor Notifier");
   context.subscriptions.push(outputChannel);
 
@@ -81,7 +83,19 @@ export async function activate(
   context.subscriptions.push(subscription);
 }
 
-export function deactivate(): void {}
+export async function deactivate(): Promise<void> {
+  const context = extensionContext;
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!context || !workspaceFolders || workspaceFolders.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    workspaceFolders.map((folder) =>
+      removeWorkspaceHookOnDeactivate(folder.uri.fsPath, context),
+    ),
+  );
+}
 
 async function ensureCursorHook(
   workspacePath: string,
@@ -389,6 +403,57 @@ async function removeHookCommand(hooksJsonPath: string): Promise<void> {
 
     await writeJsonAtomic(hooksJsonPath, config);
   });
+}
+
+async function removeWorkspaceHookOnDeactivate(
+  workspacePath: string,
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const hooksJsonPath = path.join(workspacePath, ".cursor", "hooks.json");
+  try {
+    await removeHookCommand(hooksJsonPath);
+  } catch (error) {
+    logWarn("Failed to remove hook command on deactivation.", error);
+  }
+
+  try {
+    await removeHookScriptIfOwned(workspacePath, context);
+  } catch (error) {
+    logWarn("Failed to remove hook script on deactivation.", error);
+  }
+}
+
+async function removeHookScriptIfOwned(
+  workspacePath: string,
+  context: vscode.ExtensionContext,
+): Promise<void> {
+  const hooksDir = path.join(workspacePath, ".cursor", "hooks");
+  const destHookPath = path.join(hooksDir, "after-agent-response.js");
+  if (!(await fileExists(destHookPath))) {
+    return;
+  }
+
+  const srcHookPath = context.asAbsolutePath(
+    path.join(".cursor", "hooks", "after-agent-response.js"),
+  );
+  if (!(await fileExists(srcHookPath))) {
+    logWarn("Missing bundled hook script; skipping cleanup.", { srcHookPath });
+    return;
+  }
+
+  const [srcContent, destContent] = await Promise.all([
+    fs.readFile(srcHookPath, "utf8"),
+    fs.readFile(destHookPath, "utf8"),
+  ]);
+
+  if (srcContent !== destContent) {
+    logWarn("Hook script differs from bundled version; leaving as-is.", {
+      destHookPath,
+    });
+    return;
+  }
+
+  await fs.unlink(destHookPath);
 }
 
 type HooksConfig = {

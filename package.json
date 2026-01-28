@@ -3,8 +3,8 @@
   "displayName": "Cursor Notifier",
   "description": "Local macOS notifications when Cursor AI Agent/Composer generation finishes (heuristics + state machine).",
   "icon": "logo.png",
-  "version": "0.1.4",
-  "publisher": "cursor-notifier",
+  "version": "0.1.5",
+  "publisher": "korobkov-v",
   "license": "MIT",
   "repository": {
     "type": "git",
