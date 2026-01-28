@@ -1,5 +1,7 @@
 ## Cursor Notifier (macOS)
 
+![Cursor Notifier icon](logo.png)
+
 macOS notifications when a Cursor Agent/Composer response finishes, using the official `afterAgentResponse` hook.
 
 ### Quick start (extension)
