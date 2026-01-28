@@ -12,6 +12,14 @@ The extension does not overwrite an existing hook script if you already modified
 When you disable the extension, it removes only the hook command; the script is
 kept in place. The next activation can add the command back (with a prompt).
 
+### Install from VSIX
+
+If you have the packaged file `cursor-notifier-0.1.5.vsix`:
+
+1. In Cursor, open the Command Palette.
+2. Run **Extensions: Install from VSIX...** and select the file.
+3. Reload Cursor when prompted.
+
 ### Requirements
 
 - macOS (notifications use `/usr/bin/osascript`) or Windows (PowerShell toast notifications)
@@ -22,6 +30,25 @@ kept in place. The next activation can add the command back (with a prompt).
 
 - `cursor-notifier.enabled` (default: true) — master switch for the extension; when disabled, the hook command is removed.
 - `cursor-notifier.autoIgnoreGitFiles` (default: true) — add hook files to `.gitignore` when enabling.
+
+### Build / package
+
+```bash
+npm install
+npm run build
+```
+
+To create a VSIX package:
+
+```bash
+npm run package
+```
+
+### Development
+
+1. Install dependencies: `npm install`.
+2. Open the repo in Cursor.
+3. Run the extension in Extension Development Host (e.g. `F5`).
 
 ### Quick start (manual)
 
