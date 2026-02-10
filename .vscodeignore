@@ -19,4 +19,5 @@ pnpm-lock.yaml
 .vscode/**
 .cursor/**
 !.cursor/hooks/after-agent-response.js
+!.cursor/hooks/before-submit-prompt.js
 !.cursor/hooks.json

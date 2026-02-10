@@ -7,10 +7,20 @@ const STATUS_BAR_PRIORITY = 100;
 const LOCK_MAX_RETRIES = 8;
 const LOCK_RETRY_DELAY_MS = 75;
 const CONFIG_SECTION = "cursor-notifier";
-const HOOK_COMMAND = buildHookCommand();
+const AFTER_AGENT_SCRIPT = "after-agent-response.js";
+const BEFORE_SUBMIT_SCRIPT = "before-submit-prompt.js";
+const HOOK_COMMAND_AFTER = buildHookCommand(AFTER_AGENT_SCRIPT);
+const HOOK_COMMAND_BEFORE = buildHookCommand(BEFORE_SUBMIT_SCRIPT);
+const HOOK_COMMANDS = [HOOK_COMMAND_AFTER, HOOK_COMMAND_BEFORE] as const;
+const HOOK_SCRIPTS = [AFTER_AGENT_SCRIPT, BEFORE_SUBMIT_SCRIPT] as const;
+const CONFIG_FILE_NAME = "cursor-notifier.json";
+const START_FILE_NAME = "cursor-notifier-start.json";
 const GITIGNORE_ENTRIES = [
   ".cursor/hooks.json",
   ".cursor/hooks/after-agent-response.js",
+  ".cursor/hooks/before-submit-prompt.js",
+  ".cursor/cursor-notifier.json",
+  ".cursor/cursor-notifier-start.json",
 ] as const;
 let outputChannel: vscode.OutputChannel | undefined;
 let extensionContext: vscode.ExtensionContext | undefined;
@@ -43,6 +53,9 @@ export async function activate(
       ),
     );
     updateStatusBar(statusBarItem, results.some(Boolean));
+    await Promise.all(
+      workspaceFolders.map((folder) => syncWorkspaceConfig(folder.uri.fsPath)),
+    );
   } else {
     updateStatusBar(statusBarItem, false);
   }
@@ -64,6 +77,13 @@ export async function activate(
         statusBarItem,
         nextEnabled && toggleResults.some(Boolean),
       );
+      if (nextEnabled) {
+        await Promise.all(
+          workspaceFolders.map((folder) =>
+            syncWorkspaceConfig(folder.uri.fsPath),
+          ),
+        );
+      }
     },
   );
   context.subscriptions.push(toggleCommand);
@@ -79,8 +99,28 @@ export async function activate(
         updateStatusBar(statusBarItem, true);
       }
     });
+    void Promise.all(
+      event.added.map((folder) => syncWorkspaceConfig(folder.uri.fsPath)),
+    );
   });
   context.subscriptions.push(subscription);
+
+  const settingsSubscription = vscode.workspace.onDidChangeConfiguration(
+    (event) => {
+      if (!event.affectsConfiguration(CONFIG_SECTION)) {
+        return;
+      }
+      if (!getSetting("enabled", true)) {
+        return;
+      }
+      void Promise.all(
+        workspaceFolders.map((folder) =>
+          syncWorkspaceConfig(folder.uri.fsPath),
+        ),
+      );
+    },
+  );
+  context.subscriptions.push(settingsSubscription);
 }
 
 export async function deactivate(): Promise<void> {
@@ -111,16 +151,16 @@ async function ensureCursorHook(
 
   const cursorDir = path.join(workspacePath, ".cursor");
   const hooksDir = path.join(cursorDir, "hooks");
-  const destHookPath = path.join(hooksDir, "after-agent-response.js");
-  const srcHookPath = context.asAbsolutePath(
-    path.join(".cursor", "hooks", "after-agent-response.js"),
-  );
   const hooksJsonPath = path.join(cursorDir, "hooks.json");
   const existingConfig = await readHooksConfig(hooksJsonPath);
 
   if (!existingConfig.valid) {
     logWarn("Invalid hooks.json; skipping update.", { hooksJsonPath });
     return false;
+  }
+
+  if (existingConfig.hasHookCommand) {
+    await context.globalState.update(getEnabledPromptKey(workspacePath), true);
   }
 
   const shouldEnable = existingConfig.hasHookCommand
@@ -134,7 +174,15 @@ async function ensureCursorHook(
 
   try {
     await fs.mkdir(hooksDir, { recursive: true });
-    await copyHookIfMissing(srcHookPath, destHookPath);
+    await Promise.all(
+      HOOK_SCRIPTS.map((script) => {
+        const srcHookPath = context.asAbsolutePath(
+          path.join(".cursor", "hooks", script),
+        );
+        const destHookPath = path.join(hooksDir, script);
+        return copyHookIfMissing(srcHookPath, destHookPath);
+      }),
+    );
     await upsertHooksJson(hooksJsonPath);
     try {
       if (getSetting("autoIgnoreGitFiles", true)) {
@@ -142,6 +190,11 @@ async function ensureCursorHook(
       }
     } catch (error) {
       logWarn("Failed to update .gitignore.", error);
+    }
+    try {
+      await syncWorkspaceConfig(workspacePath);
+    } catch (error) {
+      logWarn("Failed to update workspace config.", error);
     }
     return true;
   } catch (error) {
@@ -212,18 +265,13 @@ async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
     }
 
     const hooks = config.hooks;
-    const existing = Array.isArray(hooks.afterAgentResponse)
-      ? hooks.afterAgentResponse
-      : [];
-
-    if (!Array.isArray(hooks.afterAgentResponse)) {
-      hooks.afterAgentResponse = existing;
+    const afterAgent = ensureHookArray(hooks, "afterAgentResponse");
+    if (addHookCommandIfMissing(afterAgent, HOOK_COMMAND_AFTER)) {
       changed = true;
     }
 
-    const hasCommand = existing.some((entry) => entry.command === HOOK_COMMAND);
-    if (!hasCommand) {
-      existing.push({ command: HOOK_COMMAND });
+    const beforeSubmit = ensureHookArray(hooks, "beforeSubmitPrompt");
+    if (addHookCommandIfMissing(beforeSubmit, HOOK_COMMAND_BEFORE)) {
       changed = true;
     }
 
@@ -231,6 +279,28 @@ async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
       await writeJsonAtomic(hooksJsonPath, config);
     }
   });
+}
+
+function ensureHookArray(
+  hooks: Record<string, Array<{ command: string }>>,
+  key: string,
+): Array<{ command: string }> {
+  const existing = Array.isArray(hooks[key]) ? hooks[key] : [];
+  if (!Array.isArray(hooks[key])) {
+    hooks[key] = existing;
+  }
+  return existing;
+}
+
+function addHookCommandIfMissing(
+  entries: Array<{ command: string }>,
+  command: string,
+): boolean {
+  if (entries.some((entry) => entry.command === command)) {
+    return false;
+  }
+  entries.push({ command });
+  return true;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -256,11 +326,14 @@ async function readHooksConfig(
     if (!parsed) {
       return { valid: false, hasHookCommand: false };
     }
-    const existing = Array.isArray(parsed.hooks?.afterAgentResponse)
+    const afterAgent = Array.isArray(parsed.hooks?.afterAgentResponse)
       ? parsed.hooks.afterAgentResponse
       : [];
-    const hasHookCommand = existing.some(
-      (entry) => entry.command === HOOK_COMMAND,
+    const beforeSubmit = Array.isArray(parsed.hooks?.beforeSubmitPrompt)
+      ? parsed.hooks.beforeSubmitPrompt
+      : [];
+    const hasHookCommand = [...afterAgent, ...beforeSubmit].some((entry) =>
+      HOOK_COMMANDS.some((command) => entry.command === command),
     );
     return { valid: true, hasHookCommand };
   } catch {
@@ -277,7 +350,13 @@ async function promptToEnableHooks(
     return true;
   }
 
-  const skipKey = `cursor-notifier.skipPrompt:${workspacePath}`;
+  const enabledKey = getEnabledPromptKey(workspacePath);
+  const alreadyEnabled = context.globalState.get<boolean>(enabledKey, false);
+  if (alreadyEnabled) {
+    return true;
+  }
+
+  const skipKey = getSkipPromptKey(workspacePath);
   const skipPrompt = context.globalState.get<boolean>(skipKey, false);
   if (skipPrompt) {
     return false;
@@ -296,6 +375,8 @@ async function promptToEnableHooks(
   );
 
   if (choice === enableLabel) {
+    await context.globalState.update(enabledKey, true);
+    await context.globalState.update(skipKey, false);
     return true;
   }
 
@@ -304,6 +385,14 @@ async function promptToEnableHooks(
   }
 
   return false;
+}
+
+function getEnabledPromptKey(workspacePath: string): string {
+  return `cursor-notifier.enabledPrompt:${workspacePath}`;
+}
+
+function getSkipPromptKey(workspacePath: string): string {
+  return `cursor-notifier.skipPrompt:${workspacePath}`;
 }
 
 function getSetting<T>(key: string, defaultValue: T): T {
@@ -316,6 +405,39 @@ async function updateSetting<T>(key: string, value: T): Promise<void> {
   await vscode.workspace
     .getConfiguration(CONFIG_SECTION)
     .update(key, value, vscode.ConfigurationTarget.Global);
+}
+
+type WorkspaceConfig = {
+  telegram: {
+    enabled: boolean;
+    botToken: string;
+    chatId: string;
+    minDuration: string;
+    includeFullResponse: boolean;
+  };
+};
+
+function buildWorkspaceConfig(): WorkspaceConfig {
+  const minDurationSetting = getSetting<unknown>("telegram.minDuration", "");
+  const minDuration =
+    typeof minDurationSetting === "string" ? minDurationSetting.trim() : "";
+
+  return {
+    telegram: {
+      enabled: getSetting("telegram.enabled", false),
+      botToken: getSetting("telegram.botToken", ""),
+      chatId: getSetting("telegram.chatId", ""),
+      minDuration,
+      includeFullResponse: getSetting("telegram.includeFullResponse", false),
+    },
+  };
+}
+
+async function syncWorkspaceConfig(workspacePath: string): Promise<void> {
+  const cursorDir = path.join(workspacePath, ".cursor");
+  const configPath = path.join(cursorDir, CONFIG_FILE_NAME);
+  const config = buildWorkspaceConfig();
+  await writeJsonFileAtomic(configPath, config);
 }
 
 function updateStatusBar(item: vscode.StatusBarItem, enabled: boolean): void {
@@ -383,23 +505,36 @@ async function removeHookCommand(hooksJsonPath: string): Promise<void> {
     }
 
     const hooks = config.hooks;
-    const existing = Array.isArray(hooks?.afterAgentResponse)
+    const existingAfter = Array.isArray(hooks?.afterAgentResponse)
       ? (hooks?.afterAgentResponse ?? [])
       : [];
+    const existingBefore = Array.isArray(hooks?.beforeSubmitPrompt)
+      ? (hooks?.beforeSubmitPrompt ?? [])
+      : [];
 
-    if (!Array.isArray(existing) || existing.length === 0) {
-      return;
-    }
+    const filteredAfter = existingAfter.filter(
+      (entry) => !HOOK_COMMANDS.some((command) => entry.command === command),
+    );
+    const filteredBefore = existingBefore.filter(
+      (entry) => !HOOK_COMMANDS.some((command) => entry.command === command),
+    );
 
-    const filtered = existing.filter((entry) => entry.command !== HOOK_COMMAND);
-    if (filtered.length === existing.length) {
+    if (
+      filteredAfter.length === existingAfter.length &&
+      filteredBefore.length === existingBefore.length
+    ) {
       return;
     }
 
     if (!config.hooks) {
       config.hooks = {};
     }
-    config.hooks.afterAgentResponse = filtered;
+    if (Array.isArray(existingAfter)) {
+      config.hooks.afterAgentResponse = filteredAfter;
+    }
+    if (Array.isArray(existingBefore)) {
+      config.hooks.beforeSubmitPrompt = filteredBefore;
+    }
 
     await writeJsonAtomic(hooksJsonPath, config);
   });
@@ -428,32 +563,38 @@ async function removeHookScriptIfOwned(
   context: vscode.ExtensionContext,
 ): Promise<void> {
   const hooksDir = path.join(workspacePath, ".cursor", "hooks");
-  const destHookPath = path.join(hooksDir, "after-agent-response.js");
-  if (!(await fileExists(destHookPath))) {
-    return;
-  }
+  await Promise.all(
+    HOOK_SCRIPTS.map(async (script) => {
+      const destHookPath = path.join(hooksDir, script);
+      if (!(await fileExists(destHookPath))) {
+        return;
+      }
 
-  const srcHookPath = context.asAbsolutePath(
-    path.join(".cursor", "hooks", "after-agent-response.js"),
+      const srcHookPath = context.asAbsolutePath(
+        path.join(".cursor", "hooks", script),
+      );
+      if (!(await fileExists(srcHookPath))) {
+        logWarn("Missing bundled hook script; skipping cleanup.", {
+          srcHookPath,
+        });
+        return;
+      }
+
+      const [srcContent, destContent] = await Promise.all([
+        fs.readFile(srcHookPath, "utf8"),
+        fs.readFile(destHookPath, "utf8"),
+      ]);
+
+      if (srcContent !== destContent) {
+        logWarn("Hook script differs from bundled version; leaving as-is.", {
+          destHookPath,
+        });
+        return;
+      }
+
+      await fs.unlink(destHookPath);
+    }),
   );
-  if (!(await fileExists(srcHookPath))) {
-    logWarn("Missing bundled hook script; skipping cleanup.", { srcHookPath });
-    return;
-  }
-
-  const [srcContent, destContent] = await Promise.all([
-    fs.readFile(srcHookPath, "utf8"),
-    fs.readFile(destHookPath, "utf8"),
-  ]);
-
-  if (srcContent !== destContent) {
-    logWarn("Hook script differs from bundled version; leaving as-is.", {
-      destHookPath,
-    });
-    return;
-  }
-
-  await fs.unlink(destHookPath);
 }
 
 type HooksConfig = {
@@ -461,10 +602,10 @@ type HooksConfig = {
   hooks?: Record<string, Array<{ command: string }>>;
 };
 
-function buildHookCommand(): string {
+function buildHookCommand(scriptName: string): string {
   const nodePath = process.execPath || "node";
   const safeNode = sanitizeCommandPath(nodePath);
-  return `${safeNode} .cursor/hooks/after-agent-response.js`;
+  return `${safeNode} .cursor/hooks/${scriptName}`;
 }
 
 function sanitizeCommandPath(value: string): string {
@@ -589,6 +730,23 @@ async function writeJsonAtomic(
   } catch (error) {
     await fs.unlink(tempPath).catch(() => undefined);
     logWarn("Failed to write hooks.json.", error);
+    throw error;
+  }
+}
+
+async function writeJsonFileAtomic(
+  filePath: string,
+  payload: unknown,
+): Promise<void> {
+  const serialized = JSON.stringify(payload, null, 2) + "\n";
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(tempPath, serialized, "utf8");
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    logWarn("Failed to write config file.", error);
     throw error;
   }
 }

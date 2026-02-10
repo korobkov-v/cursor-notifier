@@ -14,7 +14,7 @@ kept in place. The next activation can add the command back (with a prompt).
 
 ### Install from VSIX
 
-If you have the packaged file `cursor-notifier-0.1.5.vsix`:
+If you have the packaged file `cursor-notifier-0.1.7.vsix`:
 
 1. In Cursor, open the Command Palette.
 2. Run **Extensions: Install from VSIX...** and select the file.
@@ -30,6 +30,11 @@ If you have the packaged file `cursor-notifier-0.1.5.vsix`:
 
 - `cursor-notifier.enabled` (default: true) — master switch for the extension; when disabled, the hook command is removed.
 - `cursor-notifier.autoIgnoreGitFiles` (default: true) — add hook files to `.gitignore` when enabling.
+- `cursor-notifier.telegram.enabled` (default: false) — enable Telegram notifications.
+- `cursor-notifier.telegram.botToken` — Telegram bot token used to send notifications.
+- `cursor-notifier.telegram.chatId` — Telegram chat ID where notifications are sent.
+- `cursor-notifier.telegram.minDuration` — minimal task duration in `MM:SS` before sending Telegram notification; if empty, Telegram notification is sent for any duration.
+- `cursor-notifier.telegram.includeFullResponse` (default: false) — send full agent response to Telegram in additional message parts.
 
 ### Build / package
 
@@ -65,6 +70,7 @@ This repository includes:
 
 - `.cursor/hooks.json`
 - `.cursor/hooks/after-agent-response.js`
+- `.cursor/hooks/before-submit-prompt.js`
 
 The hook runs on `afterAgentResponse` and shows a macOS notification.
 You can customize the text with environment variables:
@@ -81,17 +87,31 @@ CURSOR_NOTIFY_MESSAGE="Agent finished with {status}" \
 CURSOR_NOTIFY_STATUS="OK"
 ```
 
+### Telegram notifications (minimum duration)
+
+Telegram notifications are sent only after the agent finishes.
+Duration is measured using `beforeSubmitPrompt` (start) and `afterAgentResponse` (finish).
+
+To enable:
+
+1. Set `cursor-notifier.telegram.enabled` to `true`.
+2. Set `cursor-notifier.telegram.botToken` and `cursor-notifier.telegram.chatId`.
+3. Optionally set `cursor-notifier.telegram.minDuration` in `MM:SS` format (e.g. `01:30`).
+4. Optionally set `cursor-notifier.telegram.includeFullResponse` to `true` to send the full agent response in additional Telegram message parts.
+5. If `cursor-notifier.telegram.minDuration` is empty, Telegram message is sent for any task duration.
+
 ### Uninstall / disable
 
 To remove notifications for a workspace:
 
-1. Open `.cursor/hooks.json` and remove the `afterAgentResponse` entry with the command.
-2. Optionally delete `.cursor/hooks/after-agent-response.js`.
-3. Disable hooks in Cursor settings if you no longer use them.
+1. Open `.cursor/hooks.json` and remove both entries: `afterAgentResponse` and `beforeSubmitPrompt`.
+2. Optionally delete `.cursor/hooks/after-agent-response.js` and `.cursor/hooks/before-submit-prompt.js`.
+3. Optionally delete `.cursor/cursor-notifier.json` and `.cursor/cursor-notifier-start.json`.
+4. Disable hooks in Cursor settings if you no longer use them.
 
 When the extension deactivates (for example, when you close the window or uninstall),
-it removes its hook command from `.cursor/hooks.json` and deletes the bundled hook
-script if it has not been modified. On the next activation, the extension can add
+it removes its hook commands from `.cursor/hooks.json` and deletes bundled hook
+scripts if they have not been modified. On the next activation, the extension can add
 the hook back (it may prompt first).
 
 ### Troubleshooting

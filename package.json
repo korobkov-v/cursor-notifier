@@ -3,7 +3,7 @@
   "displayName": "Cursor Notifier",
   "description": "Local macOS/Windows notifications when Cursor AI Agent/Composer generation finishes (state machine).",
   "icon": "logo.png",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "publisher": "korobkov-v",
   "license": "MIT",
   "repository": {
@@ -43,6 +43,32 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically add hook files to .gitignore when enabling notifications."
+        },
+        "cursor-notifier.telegram.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable/disable Telegram notifications. Format: boolean (true/false)."
+        },
+        "cursor-notifier.telegram.botToken": {
+          "type": "string",
+          "default": "",
+          "description": "Telegram bot token used to send notifications. Format: string, e.g. 123456789:AA...xyz."
+        },
+        "cursor-notifier.telegram.chatId": {
+          "type": "string",
+          "default": "",
+          "description": "Telegram chat ID where notifications are sent. Format: numeric string, e.g. 123456789 (user) or -1001234567890 (group). How to get it: open chat with your bot, press Start, send any message, then open https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates and copy message.chat.id."
+        },
+        "cursor-notifier.telegram.minDuration": {
+          "type": "string",
+          "default": "",
+          "description": "Minimum task duration before Telegram notification is sent. Format: MM:SS, e.g. 01:30. If empty, Telegram message is sent for any task duration.",
+          "pattern": "^$|^[0-9]+:[0-5]?[0-9]$"
+        },
+        "cursor-notifier.telegram.includeFullResponse": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include full agent response in Telegram messages. If enabled, the response is sent in additional message parts."
         }
       }
     }

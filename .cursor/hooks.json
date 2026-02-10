@@ -4,9 +4,11 @@
     "afterAgentResponse": [
       {
         "command": "node .cursor/hooks/after-agent-response.js"
-      },
+      }
+    ],
+    "beforeSubmitPrompt": [
       {
-        "command": "\"/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)\" .cursor/hooks/after-agent-response.js"
+        "command": "node .cursor/hooks/before-submit-prompt.js"
       }
     ]
   }

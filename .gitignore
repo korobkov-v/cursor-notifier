@@ -30,3 +30,10 @@ coverage/
 Thumbs.db
 .vscode/
 
+
+.cursor/hooks.json
+.cursor/hooks/after-agent-response.js
+
+.cursor/hooks/before-submit-prompt.js
+.cursor/cursor-notifier.json
+.cursor/cursor-notifier-start.json
