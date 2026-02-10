@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 "use strict";
-// cursor-notifier:managed:start
 
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -16,7 +15,6 @@ const DEFAULT_STATUS = "OK";
 const NOTIFICATION_TIMEOUT_MS = 5000;
 const TELEGRAM_TIMEOUT_MS = 5000;
 const TELEGRAM_MESSAGE_LIMIT = 3900;
-const TELEGRAM_FORMATTED_MESSAGE_LIMIT = 3200;
 const PROJECT_DIR =
   process.env.CURSOR_PROJECT_DIR ||
   path.resolve(__dirname, "..", "..");
@@ -138,10 +136,10 @@ async function maybeSendTelegram(payload, durationMs) {
     const messageText = buildTelegramMessage(payload, null);
     await sendTelegramMessage(botToken, chatId, messageText);
     if (includeFullResponse && fullResponse) {
-      await sendLongTelegramFormattedText(
+      await sendLongTelegramText(
         botToken,
         chatId,
-        `Full response\n\n${fullResponse}`,
+        `Full response\n\n${fullResponse}`
       );
     }
     return;
@@ -158,11 +156,7 @@ async function maybeSendTelegram(payload, durationMs) {
   const messageText = buildTelegramMessage(payload, durationSeconds);
   await sendTelegramMessage(botToken, chatId, messageText);
   if (includeFullResponse && fullResponse) {
-    await sendLongTelegramFormattedText(
-      botToken,
-      chatId,
-      `Full response\n\n${fullResponse}`,
-    );
+    await sendLongTelegramText(botToken, chatId, `Full response\n\n${fullResponse}`);
   }
 }
 
@@ -373,16 +367,12 @@ function formatDuration(value) {
   return formatSeconds(value);
 }
 
-async function sendTelegramMessage(token, chatId, text, parseMode = null) {
-  const requestBody = {
+async function sendTelegramMessage(token, chatId, text) {
+  const payload = JSON.stringify({
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
-  };
-  if (parseMode) {
-    requestBody.parse_mode = parseMode;
-  }
-  const payload = JSON.stringify(requestBody);
+  });
   const options = {
     hostname: "api.telegram.org",
     path: `/bot${token}/sendMessage`,
@@ -394,59 +384,22 @@ async function sendTelegramMessage(token, chatId, text, parseMode = null) {
     timeout: TELEGRAM_TIMEOUT_MS,
   };
 
-  const responsePayload = await new Promise((resolve) => {
+  await new Promise((resolve) => {
     const request = https.request(options, (response) => {
-      let responseBody = "";
-      response.on("data", (chunk) => {
-        responseBody += chunk;
-      });
-      response.on("end", () => {
-        try {
-          resolve(JSON.parse(responseBody));
-        } catch {
-          resolve(null);
-        }
-      });
+      response.on("data", () => {});
+      response.on("end", resolve);
     });
     request.on("error", (error) => {
       console.error("[cursor-notifier] Telegram notification failed.", error);
-      resolve(null);
+      resolve();
     });
     request.on("timeout", () => {
       request.destroy();
-      resolve(null);
+      resolve();
     });
     request.write(payload);
     request.end();
   });
-
-  if (responsePayload && responsePayload.ok) {
-    return true;
-  }
-
-  const apiDescription =
-    responsePayload &&
-    typeof responsePayload === "object" &&
-    "description" in responsePayload
-      ? String(responsePayload.description || "")
-      : "";
-
-  if (parseMode) {
-    const plainText = stripTelegramHtml(text);
-    if (plainText.trim()) {
-      console.error(
-        "[cursor-notifier] Telegram parse mode failed; retrying as plain text.",
-        apiDescription,
-      );
-      return sendTelegramMessage(token, chatId, plainText, null);
-    }
-  }
-
-  console.error(
-    "[cursor-notifier] Telegram API returned an error.",
-    apiDescription || responsePayload,
-  );
-  return false;
 }
 
 async function sendLongTelegramText(token, chatId, text) {
@@ -456,19 +409,9 @@ async function sendLongTelegramText(token, chatId, text) {
   }
 }
 
-async function sendLongTelegramFormattedText(token, chatId, text) {
-  const chunks = splitTextByLimit(text, TELEGRAM_FORMATTED_MESSAGE_LIMIT);
-  for (const chunk of chunks) {
-    const formatted = formatTelegramRichText(chunk);
-    if (formatted) {
-      await sendTelegramMessage(token, chatId, formatted, "HTML");
-    }
-  }
-}
-
 function splitTextByLimit(text, limit) {
-  const normalized = String(text || "");
-  if (!normalized.trim()) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
     return [];
   }
   if (normalized.length <= limit) {
@@ -484,143 +427,17 @@ function splitTextByLimit(text, limit) {
     if (splitAt <= 0) {
       splitAt = limit;
     }
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt);
-    if (remaining.startsWith("\n")) {
-      remaining = remaining.slice(1);
-    }
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trimStart();
   }
-  if (remaining.trim().length > 0) {
+  if (remaining.length > 0) {
     chunks.push(remaining);
   }
   return chunks;
 }
 
-function formatTelegramRichText(rawValue) {
-  const value = String(rawValue || "").replace(/\r\n/g, "\n").trim();
-  if (!value) {
-    return "";
-  }
-
-  const segments = [];
-  const codeBlockRegex = /```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match = codeBlockRegex.exec(value);
-
-  while (match) {
-    const [fullMatch, language = "", codeBlockBody = ""] = match;
-    const start = match.index;
-    const end = start + fullMatch.length;
-    const textPart = value.slice(lastIndex, start);
-    if (textPart) {
-      const formatted = formatTelegramTextSegment(textPart);
-      if (formatted.trim()) {
-        segments.push(formatted);
-      }
-    }
-    const languageClass = language.trim()
-      ? ` class="language-${escapeTelegramHtmlAttribute(language.trim())}"`
-      : "";
-    segments.push(
-      `<pre><code${languageClass}>${escapeTelegramHtml(codeBlockBody.trim())}</code></pre>`,
-    );
-    lastIndex = end;
-    match = codeBlockRegex.exec(value);
-  }
-
-  const tail = value.slice(lastIndex);
-  if (tail) {
-    const formatted = formatTelegramTextSegment(tail);
-    if (formatted.trim()) {
-      segments.push(formatted);
-    }
-  }
-
-  return segments.filter(Boolean).join("\n");
-}
-
-function formatTelegramTextSegment(rawText) {
-  const lines = String(rawText || "").split("\n");
-  const formattedLines = lines.map((line) => formatTelegramTextLine(line));
-  const text = formattedLines.join("\n");
-  return text;
-}
-
-function formatTelegramTextLine(rawLine) {
-  const headingMatch = /^\s*#{1,6}\s+(.+)$/.exec(rawLine);
-  if (headingMatch) {
-    return `<b>${formatTelegramInline(headingMatch[1].trim())}</b>`;
-  }
-
-  const bulletMatch = /^(\s*)[-*]\s+(.+)$/.exec(rawLine);
-  if (bulletMatch) {
-    return `${bulletMatch[1]}• ${formatTelegramInline(bulletMatch[2])}`;
-  }
-
-  const numberedMatch = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(rawLine);
-  if (numberedMatch) {
-    return `${numberedMatch[1]}${numberedMatch[2]}. ${formatTelegramInline(numberedMatch[3])}`;
-  }
-
-  return formatTelegramInline(rawLine);
-}
-
-function formatTelegramInline(rawText) {
-  let working = String(rawText || "");
-  const placeholders = [];
-  const createPlaceholder = (value) => {
-    const key = `ZZZTGPH${placeholders.length}ZZZ`;
-    placeholders.push({ key, value });
-    return key;
-  };
-
-  working = working.replace(/`([^`\n]+)`/g, (_match, inlineCode) =>
-    createPlaceholder(`<code>${escapeTelegramHtml(inlineCode)}</code>`),
-  );
-
-  working = working.replace(
-    /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    (_match, label, href) =>
-      createPlaceholder(
-        `<a href="${escapeTelegramHtmlAttribute(href)}">${escapeTelegramHtml(label)}</a>`,
-      ),
-  );
-
-  working = escapeTelegramHtml(working);
-  working = working.replace(/\*\*([^*\n][^*\n]*?)\*\*/g, "<b>$1</b>");
-  working = working.replace(/__([^_\n][^_\n]*?)__/g, "<b>$1</b>");
-  working = working.replace(/~~([^~\n][^~\n]*?)~~/g, "<s>$1</s>");
-  working = working.replace(/\*([^*\n][^*\n]*?)\*/g, "<i>$1</i>");
-  working = working.replace(/_([^_\n][^_\n]*?)_/g, "<i>$1</i>");
-
-  for (const placeholder of placeholders) {
-    working = working.replaceAll(placeholder.key, placeholder.value);
-  }
-  return working;
-}
-
-function escapeTelegramHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeTelegramHtmlAttribute(value) {
-  return escapeTelegramHtml(value).replace(/"/g, "&quot;");
-}
-
-function stripTelegramHtml(value) {
-  const withoutTags = String(value || "").replace(/<\/?[^>]+>/g, "");
-  return withoutTags
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, ">")
-    .replace(/&lt;/g, "<")
-    .replace(/&amp;/g, "&");
-}
-
 function extractFullResponse(payload) {
-  const direct = pickFirstStringRaw(payload, [
+  const direct = pickFirstString(payload, [
     "response",
     "result.response",
     "response.text",
@@ -658,16 +475,6 @@ function extractFullResponse(payload) {
       return JSON.stringify(objectCandidate, null, 2);
     } catch {
       return "";
-    }
-  }
-  return "";
-}
-
-function pickFirstStringRaw(payload, paths) {
-  for (const keyPath of paths) {
-    const value = getByPath(payload, keyPath);
-    if (typeof value === "string" && value.trim()) {
-      return value;
     }
   }
   return "";
@@ -719,4 +526,3 @@ function escapePowerShellString(value) {
     .replace(/\s+/g, " ")
     .trim();
 }
-// cursor-notifier:managed:end

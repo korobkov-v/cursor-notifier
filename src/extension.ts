@@ -15,6 +15,8 @@ const HOOK_COMMANDS = [HOOK_COMMAND_AFTER, HOOK_COMMAND_BEFORE] as const;
 const HOOK_SCRIPTS = [AFTER_AGENT_SCRIPT, BEFORE_SUBMIT_SCRIPT] as const;
 const CONFIG_FILE_NAME = "cursor-notifier.json";
 const START_FILE_NAME = "cursor-notifier-start.json";
+const MANAGED_BLOCK_START = "// cursor-notifier:managed:start";
+const MANAGED_BLOCK_END = "// cursor-notifier:managed:end";
 const GITIGNORE_ENTRIES = [
   ".cursor/hooks.json",
   ".cursor/hooks/after-agent-response.js",
@@ -227,10 +229,57 @@ async function copyHookIfMissing(
   ]);
 
   if (srcContent !== destContent) {
-    logWarn("Hook script differs from bundled version; leaving as-is.", {
+    const managedBlock = extractManagedBlock(srcContent);
+    if (!managedBlock) {
+      logWarn("Bundled hook script is missing managed block markers.", {
+        srcHookPath,
+      });
+      return;
+    }
+    const mergedContent = replaceManagedBlock(destContent, managedBlock);
+    if (mergedContent === null) {
+      logWarn(
+        "Hook script differs and has no managed block markers; leaving as-is.",
+        { destHookPath },
+      );
+      return;
+    }
+    if (mergedContent === destContent) {
+      return;
+    }
+    await fs.writeFile(destHookPath, mergedContent, "utf8");
+    logWarn("Updated managed hook block to latest bundled version.", {
       destHookPath,
     });
   }
+}
+
+function extractManagedBlock(content: string): string | null {
+  const start = content.indexOf(MANAGED_BLOCK_START);
+  if (start === -1) {
+    return null;
+  }
+  const end = content.indexOf(MANAGED_BLOCK_END, start);
+  if (end === -1) {
+    return null;
+  }
+  return content.slice(start, end + MANAGED_BLOCK_END.length);
+}
+
+function replaceManagedBlock(
+  content: string,
+  managedBlock: string,
+): string | null {
+  const start = content.indexOf(MANAGED_BLOCK_START);
+  if (start === -1) {
+    return null;
+  }
+  const end = content.indexOf(MANAGED_BLOCK_END, start);
+  if (end === -1) {
+    return null;
+  }
+  const endExclusive = end + MANAGED_BLOCK_END.length;
+  return `${content.slice(0, start)}${managedBlock}${content.slice(endExclusive)}`;
 }
 
 async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
