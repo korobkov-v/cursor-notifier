@@ -238,6 +238,14 @@ async function copyHookIfMissing(
     }
     const mergedContent = replaceManagedBlock(destContent, managedBlock);
     if (mergedContent === null) {
+      if (isLikelyOwnedHookScript(destContent)) {
+        await fs.writeFile(destHookPath, srcContent, "utf8");
+        logWarn(
+          "Updated legacy owned hook script to latest bundled version.",
+          { destHookPath },
+        );
+        return;
+      }
       logWarn(
         "Hook script differs and has no managed block markers; leaving as-is.",
         { destHookPath },
@@ -280,6 +288,22 @@ function replaceManagedBlock(
   }
   const endExclusive = end + MANAGED_BLOCK_END.length;
   return `${content.slice(0, start)}${managedBlock}${content.slice(endExclusive)}`;
+}
+
+function isLikelyOwnedHookScript(content: string): boolean {
+  if (!content.includes("#!/usr/bin/env node")) {
+    return false;
+  }
+  if (!content.includes("[cursor-notifier]")) {
+    return false;
+  }
+  const ownershipMarkers = [
+    "cursor-notifier-start.json",
+    "cursor-notifier.json",
+    "after-agent-response.js",
+    "before-submit-prompt.js",
+  ];
+  return ownershipMarkers.some((marker) => content.includes(marker));
 }
 
 async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
