@@ -15,7 +15,9 @@ const DEFAULT_STATUS = "OK";
 const NOTIFICATION_TIMEOUT_MS = 5000;
 const TELEGRAM_TIMEOUT_MS = 5000;
 const TELEGRAM_MESSAGE_LIMIT = 3900;
-const PROJECT_DIR = process.env.CURSOR_PROJECT_DIR || process.cwd();
+const PROJECT_DIR =
+  process.env.CURSOR_PROJECT_DIR ||
+  path.resolve(__dirname, "..", "..");
 const CONFIG_PATH = path.join(PROJECT_DIR, ".cursor", "cursor-notifier.json");
 const START_PATH = path.join(
   PROJECT_DIR,

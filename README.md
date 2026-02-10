@@ -14,7 +14,7 @@ kept in place. The next activation can add the command back (with a prompt).
 
 ### Install from VSIX
 
-If you have the packaged file `cursor-notifier-0.1.7.vsix`:
+If you have the packaged file `cursor-notifier-0.1.8.vsix`:
 
 1. In Cursor, open the Command Palette.
 2. Run **Extensions: Install from VSIX...** and select the file.
