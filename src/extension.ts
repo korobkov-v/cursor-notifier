@@ -7,18 +7,33 @@ const STATUS_BAR_PRIORITY = 100;
 const LOCK_MAX_RETRIES = 8;
 const LOCK_RETRY_DELAY_MS = 75;
 const CONFIG_SECTION = "cursor-notifier";
-const AFTER_AGENT_SCRIPT = "after-agent-response.js";
-const BEFORE_SUBMIT_SCRIPT = "before-submit-prompt.js";
+const BUNDLED_HOOKS_DIR = path.join("assets", "hooks");
+const AFTER_AGENT_SCRIPT = "after-agent-response.cjs";
+const BEFORE_SUBMIT_SCRIPT = "before-submit-prompt.cjs";
+const LEGACY_AFTER_AGENT_SCRIPT = "after-agent-response.js";
+const LEGACY_BEFORE_SUBMIT_SCRIPT = "before-submit-prompt.js";
 const HOOK_COMMAND_AFTER = buildHookCommand(AFTER_AGENT_SCRIPT);
 const HOOK_COMMAND_BEFORE = buildHookCommand(BEFORE_SUBMIT_SCRIPT);
-const HOOK_COMMANDS = [HOOK_COMMAND_AFTER, HOOK_COMMAND_BEFORE] as const;
-const HOOK_SCRIPTS = [AFTER_AGENT_SCRIPT, BEFORE_SUBMIT_SCRIPT] as const;
+const LEGACY_HOOK_COMMAND_AFTER = buildHookCommand(LEGACY_AFTER_AGENT_SCRIPT);
+const LEGACY_HOOK_COMMAND_BEFORE = buildHookCommand(LEGACY_BEFORE_SUBMIT_SCRIPT);
+const HOOK_COMMANDS = [
+  HOOK_COMMAND_AFTER,
+  HOOK_COMMAND_BEFORE,
+  LEGACY_HOOK_COMMAND_AFTER,
+  LEGACY_HOOK_COMMAND_BEFORE,
+] as const;
+const HOOK_SCRIPTS = [
+  AFTER_AGENT_SCRIPT,
+  BEFORE_SUBMIT_SCRIPT,
+] as const;
 const CONFIG_FILE_NAME = "cursor-notifier.json";
 const START_FILE_NAME = "cursor-notifier-start.json";
 const MANAGED_BLOCK_START = "// cursor-notifier:managed:start";
 const MANAGED_BLOCK_END = "// cursor-notifier:managed:end";
 const GITIGNORE_ENTRIES = [
   ".cursor/hooks.json",
+  ".cursor/hooks/after-agent-response.cjs",
+  ".cursor/hooks/before-submit-prompt.cjs",
   ".cursor/hooks/after-agent-response.js",
   ".cursor/hooks/before-submit-prompt.js",
   ".cursor/cursor-notifier.json",
@@ -179,7 +194,7 @@ async function ensureCursorHook(
     await Promise.all(
       HOOK_SCRIPTS.map((script) => {
         const srcHookPath = context.asAbsolutePath(
-          path.join(".cursor", "hooks", script),
+          path.join(BUNDLED_HOOKS_DIR, script),
         );
         const destHookPath = path.join(hooksDir, script);
         return copyHookIfMissing(srcHookPath, destHookPath);
@@ -300,6 +315,8 @@ function isLikelyOwnedHookScript(content: string): boolean {
   const ownershipMarkers = [
     "cursor-notifier-start.json",
     "cursor-notifier.json",
+    "after-agent-response.cjs",
+    "before-submit-prompt.cjs",
     "after-agent-response.js",
     "before-submit-prompt.js",
   ];
@@ -339,11 +356,17 @@ async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
 
     const hooks = config.hooks;
     const afterAgent = ensureHookArray(hooks, "afterAgentResponse");
+    if (removeHookCommandsForScript(afterAgent, LEGACY_AFTER_AGENT_SCRIPT)) {
+      changed = true;
+    }
     if (addHookCommandIfMissing(afterAgent, HOOK_COMMAND_AFTER)) {
       changed = true;
     }
 
     const beforeSubmit = ensureHookArray(hooks, "beforeSubmitPrompt");
+    if (removeHookCommandsForScript(beforeSubmit, LEGACY_BEFORE_SUBMIT_SCRIPT)) {
+      changed = true;
+    }
     if (addHookCommandIfMissing(beforeSubmit, HOOK_COMMAND_BEFORE)) {
       changed = true;
     }
@@ -374,6 +397,20 @@ function addHookCommandIfMissing(
   }
   entries.push({ command });
   return true;
+}
+
+function removeHookCommandsForScript(
+  entries: Array<{ command: string }>,
+  scriptName: string,
+): boolean {
+  const originalLength = entries.length;
+  const suffix = `.cursor/hooks/${scriptName}`;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index].command.trimEnd().endsWith(suffix)) {
+      entries.splice(index, 1);
+    }
+  }
+  return entries.length !== originalLength;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -644,7 +681,7 @@ async function removeHookScriptIfOwned(
       }
 
       const srcHookPath = context.asAbsolutePath(
-        path.join(".cursor", "hooks", script),
+        path.join(BUNDLED_HOOKS_DIR, script),
       );
       if (!(await fileExists(srcHookPath))) {
         logWarn("Missing bundled hook script; skipping cleanup.", {

@@ -14,7 +14,7 @@ kept in place. The next activation can add the command back (with a prompt).
 
 ### Install from VSIX
 
-If you have the packaged file `cursor-notifier-0.1.9.vsix`:
+If you have the packaged file `cursor-notifier-0.1.11.vsix`:
 
 1. In Cursor, open the Command Palette.
 2. Run **Extensions: Install from VSIX...** and select the file.
@@ -55,22 +55,12 @@ npm run package
 2. Open the repo in Cursor.
 3. Run the extension in Extension Development Host (e.g. `F5`).
 
-### Quick start (manual)
-
-```bash
-# From the repo root (only needed for direct execution)
-chmod +x .cursor/hooks/after-agent-response.js
-```
-
-Then enable hooks in Cursor and use `.cursor/hooks.json` from this repository.
-
 ### Hook details: afterAgentResponse
 
-This repository includes:
+The extension package includes hook assets:
 
-- `.cursor/hooks.json`
-- `.cursor/hooks/after-agent-response.js`
-- `.cursor/hooks/before-submit-prompt.js`
+- `assets/hooks/after-agent-response.cjs`
+- `assets/hooks/before-submit-prompt.cjs`
 
 The hook runs on `afterAgentResponse` and shows a macOS notification.
 You can customize the text with environment variables:
@@ -105,7 +95,7 @@ To enable:
 To remove notifications for a workspace:
 
 1. Open `.cursor/hooks.json` and remove both entries: `afterAgentResponse` and `beforeSubmitPrompt`.
-2. Optionally delete `.cursor/hooks/after-agent-response.js` and `.cursor/hooks/before-submit-prompt.js`.
+2. Optionally delete `.cursor/hooks/after-agent-response.cjs` and `.cursor/hooks/before-submit-prompt.cjs`.
 3. Optionally delete `.cursor/cursor-notifier.json` and `.cursor/cursor-notifier-start.json`.
 4. Disable hooks in Cursor settings if you no longer use them.
 
@@ -117,7 +107,7 @@ the hook back (it may prompt first).
 ### Troubleshooting
 
 - **No notification appears**: Ensure hooks are enabled in Cursor settings and the workspace has `.cursor/hooks.json`.
-- **Hook does not run**: Verify Node.js is available and the hook script is executable (`chmod +x .cursor/hooks/after-agent-response.js`).
+- **Hook does not run**: Verify Node.js is available and the workspace has `.cursor/hooks/after-agent-response.cjs` and `.cursor/hooks/before-submit-prompt.cjs`.
 - **Custom message not applied**: Check that environment variables are set in the shell or the process launching Cursor.
 
 ### Security
