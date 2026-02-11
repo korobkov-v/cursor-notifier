@@ -14,13 +14,11 @@ const LEGACY_AFTER_AGENT_SCRIPT = "after-agent-response.js";
 const LEGACY_BEFORE_SUBMIT_SCRIPT = "before-submit-prompt.js";
 const HOOK_COMMAND_AFTER = buildHookCommand(AFTER_AGENT_SCRIPT);
 const HOOK_COMMAND_BEFORE = buildHookCommand(BEFORE_SUBMIT_SCRIPT);
-const LEGACY_HOOK_COMMAND_AFTER = buildHookCommand(LEGACY_AFTER_AGENT_SCRIPT);
-const LEGACY_HOOK_COMMAND_BEFORE = buildHookCommand(LEGACY_BEFORE_SUBMIT_SCRIPT);
-const HOOK_COMMANDS = [
-  HOOK_COMMAND_AFTER,
-  HOOK_COMMAND_BEFORE,
-  LEGACY_HOOK_COMMAND_AFTER,
-  LEGACY_HOOK_COMMAND_BEFORE,
+const MANAGED_HOOK_SCRIPTS = [
+  AFTER_AGENT_SCRIPT,
+  BEFORE_SUBMIT_SCRIPT,
+  LEGACY_AFTER_AGENT_SCRIPT,
+  LEGACY_BEFORE_SUBMIT_SCRIPT,
 ] as const;
 const HOOK_SCRIPTS = [
   AFTER_AGENT_SCRIPT,
@@ -356,6 +354,15 @@ async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
 
     const hooks = config.hooks;
     const afterAgent = ensureHookArray(hooks, "afterAgentResponse");
+    if (
+      removeHookCommandsForScript(
+        afterAgent,
+        AFTER_AGENT_SCRIPT,
+        HOOK_COMMAND_AFTER,
+      )
+    ) {
+      changed = true;
+    }
     if (removeHookCommandsForScript(afterAgent, LEGACY_AFTER_AGENT_SCRIPT)) {
       changed = true;
     }
@@ -364,6 +371,15 @@ async function upsertHooksJson(hooksJsonPath: string): Promise<void> {
     }
 
     const beforeSubmit = ensureHookArray(hooks, "beforeSubmitPrompt");
+    if (
+      removeHookCommandsForScript(
+        beforeSubmit,
+        BEFORE_SUBMIT_SCRIPT,
+        HOOK_COMMAND_BEFORE,
+      )
+    ) {
+      changed = true;
+    }
     if (removeHookCommandsForScript(beforeSubmit, LEGACY_BEFORE_SUBMIT_SCRIPT)) {
       changed = true;
     }
@@ -402,11 +418,17 @@ function addHookCommandIfMissing(
 function removeHookCommandsForScript(
   entries: Array<{ command: string }>,
   scriptName: string,
+  keepCommand?: string,
 ): boolean {
   const originalLength = entries.length;
+  const normalizedKeepCommand = keepCommand?.trim();
   const suffix = `.cursor/hooks/${scriptName}`;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (entries[index].command.trimEnd().endsWith(suffix)) {
+    const command = entries[index].command.trimEnd();
+    if (
+      command.endsWith(suffix) &&
+      (!normalizedKeepCommand || command !== normalizedKeepCommand)
+    ) {
       entries.splice(index, 1);
     }
   }
@@ -443,7 +465,7 @@ async function readHooksConfig(
       ? parsed.hooks.beforeSubmitPrompt
       : [];
     const hasHookCommand = [...afterAgent, ...beforeSubmit].some((entry) =>
-      HOOK_COMMANDS.some((command) => entry.command === command),
+      isManagedHookCommand(entry.command),
     );
     return { valid: true, hasHookCommand };
   } catch {
@@ -623,10 +645,10 @@ async function removeHookCommand(hooksJsonPath: string): Promise<void> {
       : [];
 
     const filteredAfter = existingAfter.filter(
-      (entry) => !HOOK_COMMANDS.some((command) => entry.command === command),
+      (entry) => !isManagedHookCommand(entry.command),
     );
     const filteredBefore = existingBefore.filter(
-      (entry) => !HOOK_COMMANDS.some((command) => entry.command === command),
+      (entry) => !isManagedHookCommand(entry.command),
     );
 
     if (
@@ -713,9 +735,19 @@ type HooksConfig = {
 };
 
 function buildHookCommand(scriptName: string): string {
-  const nodePath = process.execPath || "node";
-  const safeNode = sanitizeCommandPath(nodePath);
-  return `${safeNode} .cursor/hooks/${scriptName}`;
+  const nodeCommand = resolveNodeCommand();
+  return `${nodeCommand} .cursor/hooks/${scriptName}`;
+}
+
+function resolveNodeCommand(): string {
+  const execPath = process.execPath;
+  if (typeof execPath === "string" && execPath.trim()) {
+    const executableName = path.basename(execPath).toLowerCase();
+    if (executableName === "node" || executableName === "node.exe") {
+      return sanitizeCommandPath(execPath);
+    }
+  }
+  return "node";
 }
 
 function sanitizeCommandPath(value: string): string {
@@ -756,6 +788,13 @@ function parseHooksJson(raw: string): HooksConfig | null {
   }
 
   return parsed as HooksConfig;
+}
+
+function isManagedHookCommand(command: string): boolean {
+  const normalized = command.trimEnd();
+  return MANAGED_HOOK_SCRIPTS.some((scriptName) =>
+    normalized.endsWith(`.cursor/hooks/${scriptName}`),
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
